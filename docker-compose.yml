@@ -1,0 +1,103 @@
+# ---------------------------------------------------------------------------
+# Full stack: Postgres + Redis + Web (Next.js) + Worker (BullMQ)
+# Usage:  docker compose up -d --build
+# ---------------------------------------------------------------------------
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: job_email_extractor
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - '5432:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ['redis-server', '--appendonly', 'yes']
+    volumes:
+      - redisdata:/data
+    ports:
+      - '6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    # `db push` syncs the schema without requiring committed migration files,
+    # so the stack comes up cleanly on a fresh volume. To use versioned
+    # migrations instead, generate them with `npm run prisma:migrate` and change
+    # this command to `npx prisma migrate deploy`.
+    command: ['npx', 'prisma', 'db', 'push', '--skip-generate']
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/job_email_extractor?schema=public
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: 'no'
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/job_email_extractor?schema=public
+      REDIS_URL: redis://redis:6379
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET}
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - '3000:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/job_email_extractor?schema=public
+      REDIS_URL: redis://redis:6379
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      EXPORT_DIR: /app/exports
+    volumes:
+      - exports:/app/exports
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:
+  redisdata:
+  exports:
