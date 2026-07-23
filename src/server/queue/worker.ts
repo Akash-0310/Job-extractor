@@ -4,6 +4,13 @@
  * stays responsive and long 50k-message syncs survive restarts/retries.
  */
 import 'dotenv/config';
+import dns from 'node:dns';
+// Prefer IPv4 when resolving hostnames. Google APIs publish both A and AAAA
+// records; on networks with a broken/unroutable IPv6 path, Node's Happy Eyeballs
+// can pick the IPv6 address and the connection stalls or is reset mid-response
+// (ETIMEDOUT / ERR_STREAM_PREMATURE_CLOSE against gmail.googleapis.com).
+dns.setDefaultResultOrder('ipv4first');
+
 import { Worker, type Job } from 'bullmq';
 import { redisConnection } from './connection';
 import { syncQueue, enqueueSync, type SyncJobData } from './sync.queue';

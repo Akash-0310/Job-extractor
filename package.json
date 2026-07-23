@@ -5,9 +5,9 @@
   "description": "Extract and manage HR/company email addresses from Gmail sent job-application emails.",
   "license": "MIT",
   "scripts": {
-    "dev": "next dev",
+    "dev": "NODE_OPTIONS=--dns-result-order=ipv4first next dev",
     "build": "prisma generate && next build",
-    "start": "next start",
+    "start": "NODE_OPTIONS=--dns-result-order=ipv4first next start",
     "lint": "next lint",
     "format": "prettier --write \"src/**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit",
@@ -39,6 +39,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "tailwind-merge": "^2.5.3",
+    "undici": "^8.8.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

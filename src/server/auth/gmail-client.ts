@@ -5,9 +5,17 @@ import { prisma } from '@/lib/prisma';
 import { env } from '@/lib/env';
 import { GmailAuthError } from '@/lib/errors';
 import { logger } from '@/lib/logger';
+import { googleFetchImplementation } from './http-agent';
 
 /** Skew (ms) before real expiry at which we proactively refresh the token. */
 const EXPIRY_SKEW_MS = 60_000;
+
+// Route every googleapis request (Gmail API calls) through undici's fetch
+// instead of gaxios's default node-fetch@2. See http-agent.ts for why. Applied
+// once at module load.
+if (googleFetchImplementation) {
+  google.options({ fetchImplementation: googleFetchImplementation });
+}
 
 /**
  * Build an authenticated OAuth2 client for a user, refreshing the access token
@@ -34,6 +42,10 @@ export async function getOAuthClientForUser(userId: string): Promise<OAuth2Clien
   const client = new OAuth2Client({
     clientId: env.GOOGLE_CLIENT_ID,
     clientSecret: env.GOOGLE_CLIENT_SECRET,
+    // Route the token-refresh call through undici's fetch too.
+    transporterOptions: googleFetchImplementation
+      ? { fetchImplementation: googleFetchImplementation }
+      : undefined,
   });
 
   client.setCredentials({

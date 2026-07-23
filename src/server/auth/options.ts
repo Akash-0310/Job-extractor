@@ -2,9 +2,19 @@ import type { NextAuthOptions } from 'next-auth';
 import type { Adapter, AdapterAccount } from 'next-auth/adapters';
 import GoogleProvider from 'next-auth/providers/google';
 import { PrismaAdapter } from '@next-auth/prisma-adapter';
+import { custom } from 'openid-client';
 import { prisma } from '@/lib/prisma';
 import { env } from '@/lib/env';
 import { GMAIL_SCOPES } from '@/config/constants';
+import { ipv4Lookup } from './http-agent';
+
+// NextAuth v4 performs the Google OAuth token exchange via openid-client. Force
+// its HTTP requests to resolve IPv4 only — this host's IPv6 route to Google
+// hangs until timeout (OAUTH_CALLBACK_ERROR / ETIMEDOUT). See http-agent.ts.
+// Opt out with GOOGLE_FORCE_IPV4=0 (e.g. on an IPv6-only host).
+if (process.env.GOOGLE_FORCE_IPV4 !== '0') {
+  custom.setHttpOptionsDefaults({ lookup: ipv4Lookup });
+}
 
 /**
  * PrismaAdapter, patched so `linkAccount` strips fields Google returns that are
@@ -44,6 +54,12 @@ export const authOptions: NextAuthOptions = {
     GoogleProvider({
       clientId: env.GOOGLE_CLIENT_ID,
       clientSecret: env.GOOGLE_CLIENT_SECRET,
+      // Google is our only provider, so linking by verified email is safe here.
+      // It also lets a fresh sign-in re-link to the existing user after the
+      // stored Account row is cleared to re-grant scopes (the adapter's
+      // linkAccount only runs when no account is linked; a repeat sign-in with
+      // an existing Account row does NOT update the persisted tokens/scope).
+      allowDangerousEmailAccountLinking: true,
       authorization: {
         params: {
           scope: GMAIL_SCOPES.join(' '),
