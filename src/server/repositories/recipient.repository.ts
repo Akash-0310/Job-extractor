@@ -3,6 +3,24 @@ import { prisma } from '@/lib/prisma';
 import { DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE } from '@/config/constants';
 import type { RecipientFilters } from '@/types';
 
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * Resolve the upper bound of a date filter.
+ *
+ * The filter UI is `<input type="date">`, so dateTo arrives as "YYYY-MM-DD" and
+ * `new Date()` reads that as midnight UTC. Used directly as `lte` it excluded
+ * everything sent during the end day itself — picking the same day for From and
+ * To returned no rows at all. Stretch a date-only bound to the end of that day;
+ * a full timestamp is already precise, so it passes through untouched.
+ *
+ * Both ends stay on a UTC-day basis, matching how the `gte` bound already
+ * behaves.
+ */
+function toUpperBound(value: string): Date {
+  return DATE_ONLY.test(value) ? new Date(`${value}T23:59:59.999Z`) : new Date(value);
+}
+
 /** Build the Prisma `where` clause shared by list, search, and export. */
 export function buildRecipientWhere(
   userId: string,
@@ -30,7 +48,7 @@ export function buildRecipientWhere(
   if (filters.dateFrom || filters.dateTo) {
     const lastSentAt: Prisma.DateTimeFilter = {};
     if (filters.dateFrom) lastSentAt.gte = new Date(filters.dateFrom);
-    if (filters.dateTo) lastSentAt.lte = new Date(filters.dateTo);
+    if (filters.dateTo) lastSentAt.lte = toUpperBound(filters.dateTo);
     and.push({ lastSentAt });
   }
 
